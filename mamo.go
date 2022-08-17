@@ -25,14 +25,13 @@ type Mamo struct {
 	ttl      time.Duration
 }
 
-func New(thres time.Duration, notifier func() bool) *Mamo {
+func New(ttl time.Duration, notifier func() bool) *Mamo {
 	m := &Mamo{
 		eventQ:   make(chan mamoEvent),
 		diedCh:   make(chan struct{}),
 		notifier: notifier,
-		ttl:      thres,
+		ttl:      ttl,
 	}
-	m.eventQ <- meRelease
 	return m
 }
 
