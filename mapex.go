@@ -27,6 +27,10 @@ func (r *MapExResult[V]) Revoke() {
 	}
 }
 
+func (r *MapExResult[V]) IsRevoked() bool {
+	return r.item == nil || r.call.ver != atomic.LoadUint32(&r.item.ver)
+}
+
 type itemExState = int32
 
 const (
