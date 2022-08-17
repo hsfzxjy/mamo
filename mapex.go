@@ -118,7 +118,7 @@ func NewMapEx[K comparable, V any](ttl time.Duration) *MamoMapEx[K, V] {
 
 func (m *MamoMapEx[K, V]) AcquireOrStore(key K, createValue func() (V, error)) (res *MapExResult[V], created bool, release ReleaseFunc) {
 	var item *itemEx[V]
-	item, created, release = m.m.AcquireOrStore(key, newItemEx[V])
+	item, created, release = m.m.AcquireOrStore(key, func(e Entry) *itemEx[V] { return newItemEx[V]() })
 	var c *call[V]
 
 LOAD_STATE:

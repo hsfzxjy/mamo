@@ -49,9 +49,55 @@ type mamoEntry[V any] struct {
 	value *V
 }
 
-func (e mamoEntry[V]) untouchedSince(ver uint32) bool {
+func (e *mamoEntry[V]) untouchedSince(ver uint32) bool {
 	return atomic.LoadInt32(&e.cnt) == 0 && atomic.LoadUint32(&e.ver) == ver
 }
+
+func (e *mamoEntry[V]) acquire() bool {
+	atomic.AddInt32(&e.cnt, +1)
+
+	var flag = atomic.LoadUint32(&e.flag)
+	switch flag {
+	case mefInitializing:
+		for atomic.LoadUint32(&e.flag) == mefInitializing {
+			runtime.Gosched()
+		}
+	case mefReady:
+		break
+	case mefDeleting:
+	DELETING_LOOP:
+		for {
+			switch atomic.LoadUint32(&e.flag) {
+			case mefReady:
+				break DELETING_LOOP
+			case mefDeleting:
+				runtime.Gosched()
+			case mefDeleted:
+				return false
+			}
+		}
+	case mefDeleted:
+		return false
+	}
+
+	atomic.AddUint32(&e.ver, 1)
+	return true
+}
+
+type Entry struct {
+	acquireFunc func() bool
+	releaseFunc func()
+}
+
+func newEntry[K comparable, V any](m *MamoMap[K, V], key K, e *mamoEntry[V]) Entry {
+	return Entry{
+		acquireFunc: e.acquire,
+		releaseFunc: func() { m.releaseEntry(key, e) },
+	}
+}
+
+func (e Entry) Acquire() bool { return e.acquireFunc() }
+func (e Entry) Release()      { e.releaseFunc() }
 
 type MamoMap[K comparable, V any] struct {
 	once sync.Once
@@ -157,7 +203,6 @@ LOOP:
 					return
 				}
 			}
-			// return
 		case mmekTick:
 			if len(toDelete) == 0 && len(toCheck) == 0 {
 				timer.stop()
@@ -210,7 +255,7 @@ func (m *MamoMap[K, V]) Loop() {
 	m.once.Do(func() { go m.loop() })
 }
 
-func (m *MamoMap[K, V]) AcquireOrStore(key K, createValue func() V) (ret V, created bool, release ReleaseFunc) {
+func (m *MamoMap[K, V]) AcquireOrStore(key K, createValue func(Entry) V) (ret V, created bool, release ReleaseFunc) {
 	m.ensureAlive()
 BEGIN:
 	entry := &mamoEntry[V]{cnt: 1, flag: mefInitializing}
@@ -244,7 +289,7 @@ BEGIN:
 		}
 		created = false
 	} else {
-		value := createValue()
+		value := createValue(newEntry(m, key, entry))
 		entry.value = &value
 		atomic.StoreUint32(&entry.flag, mefReady)
 		created = true
@@ -263,34 +308,12 @@ func (m *MamoMap[K, V]) Acquire(key K) (ret V, acquired bool, release ReleaseFun
 		return
 	}
 	entry := actual.(*mamoEntry[V])
-	atomic.AddInt32(&entry.cnt, +1)
 
-	var flag = atomic.LoadUint32(&entry.flag)
-	switch flag {
-	case mefInitializing:
-		for atomic.LoadUint32(&entry.flag) == mefInitializing {
-			runtime.Gosched()
-		}
-	case mefReady:
-		break
-	case mefDeleting:
-	DELETING_LOOP:
-		for {
-			switch atomic.LoadUint32(&entry.flag) {
-			case mefReady:
-				break DELETING_LOOP
-			case mefDeleting:
-				runtime.Gosched()
-			case mefDeleted:
-				return
-			}
-		}
-	case mefDeleted:
+	if !entry.acquire() {
 		return
+	} else {
+		return *entry.value, true, func() { m.releaseEntry(key, entry) }
 	}
-
-	atomic.AddUint32(&entry.ver, 1)
-	return *entry.value, true, func() { m.releaseEntry(key, entry) }
 }
 
 func (m *MamoMap[K, V]) Release(key K) {
