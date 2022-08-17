@@ -2,11 +2,12 @@ package mamo_test
 
 import (
 	"errors"
-	"mamo"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/hsfzxjy/mamo"
 )
 
 func TestMapEx(t *testing.T) {

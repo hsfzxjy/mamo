@@ -1,10 +1,11 @@
 package mamo_test
 
 import (
-	"mamo"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/hsfzxjy/mamo"
 )
 
 func TestMap(t *testing.T) {
