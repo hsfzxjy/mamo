@@ -53,10 +53,11 @@ type itemEx[V any] struct {
 	state itemExState
 	ver   uint32
 	call  *call[V]
+	entry Entry
 }
 
-func newItemEx[V any]() *itemEx[V] {
-	return &itemEx[V]{state: iesUninitialized}
+func newItemEx[V any](entry Entry) *itemEx[V] {
+	return &itemEx[V]{state: iesUninitialized, entry: entry}
 }
 
 func (item *itemEx[V]) revoke(ver uint32) {
@@ -71,7 +72,7 @@ func (item *itemEx[V]) revoke(ver uint32) {
 	}
 }
 
-func (i *itemEx[V]) do(createValue func() (V, error)) *call[V] {
+func (i *itemEx[V]) do(createValue func(Entry) (V, error)) *call[V] {
 	if atomic.CompareAndSwapInt32(&i.state, iesUninitialized, iesInitializing) {
 		c := &call[V]{
 			wg:  &sync.WaitGroup{},
@@ -100,7 +101,7 @@ func (i *itemEx[V]) do(createValue func() (V, error)) *call[V] {
 			c.wg.Done()
 		}()
 
-		v, err = createValue()
+		v, err = createValue(i.entry)
 		return c
 	}
 	return nil
@@ -116,9 +117,9 @@ func NewMapEx[K comparable, V any](ttl time.Duration) *MamoMapEx[K, V] {
 	return m
 }
 
-func (m *MamoMapEx[K, V]) AcquireOrStore(key K, createValue func() (V, error)) (res *MapExResult[V], created bool, release ReleaseFunc) {
+func (m *MamoMapEx[K, V]) AcquireOrStore(key K, createValue func(e Entry) (V, error)) (res *MapExResult[V], created bool, release ReleaseFunc) {
 	var item *itemEx[V]
-	item, created, release = m.m.AcquireOrStore(key, func(e Entry) *itemEx[V] { return newItemEx[V]() })
+	item, created, release = m.m.AcquireOrStore(key, func(e Entry) *itemEx[V] { return newItemEx[V](e) })
 	var c *call[V]
 
 LOAD_STATE:

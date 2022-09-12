@@ -12,7 +12,7 @@ import (
 
 func TestMapEx(t *testing.T) {
 	m := mamo.NewMapEx[int, int](10 * time.Millisecond)
-	newer := func() (int, error) {
+	newer := func(mamo.Entry) (int, error) {
 		time.Sleep(500 * time.Millisecond)
 		return 1, nil
 	}
@@ -48,7 +48,7 @@ func TestMapEx(t *testing.T) {
 	wg.Add(3)
 	var nerrs int32 = 0
 	ncreats = 0
-	newer = func() (int, error) {
+	newer = func(mamo.Entry) (int, error) {
 		time.Sleep(500 * time.Millisecond)
 		return 1, errors.New("oops")
 	}
